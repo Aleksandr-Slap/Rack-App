@@ -6,51 +6,48 @@ class App
   def call(env)
     @env = env
     @params = @env["QUERY_STRING"]
-    format unless @params&.nil?
+    sort_parameters if @params.length != 0
     [status, headers, body]
   end
 
   private
 
-  PARAMS_VALID = "%y%m%d%h%m%s".freeze
+  PARAMS_VALID = { "year" => "%y", "month" => "%m", "day" => "%d", "hour" => "%H", "min" => "%M", "sec" => "%H" }.freeze
 
-  def format
-    @newparams = []
-    @badparams = []
-    i = 7
-    while i < @params.length
-      @newparams.push(@params[i]) if PARAMS_VALID.include?(@params[i])
-      @badparams.push(@params[i]) unless PARAMS_VALID.include?(@params[i])
-      i += 1
-    end 
-  end
+  def sort_parameters
+    @valid_params = []
+    @bad_params = []
+    # byebug
+    params = @params.split(%r{=\s*})[1].split(%r{%2C\s*})
+    params.each do |p|
+      if PARAMS_VALID[p]
+        @valid_params << PARAMS_VALID[p]
+      else
+        @bad_params << p
+      end   
+    end  
+  end  
 
   def status
-    @env["REQUEST_PATH"] == "/time"? 200 : 404 and @badparams.empty? ? 200 : 400
+    return 400 if no_bad_parameters?
+
+    @env["REQUEST_PATH"] == "/time" ? 200 : 404
   end
   
   def headers
-    @newparams.clear if @badparams&.any?
-    if status_200 && @newparams&.any?
-      { "The-date-time" => "#{Time.now.strftime(@newparams.join("-"))}" }
-    elsif status_200
-      { "The-date-time" => "#{Time.now}" }
-    else  
-      {'Error' => "Invalid request"}
-    end 
-  end
-  
+    return { "The-date-time" => "ERROR" } if no_bad_parameters?
+
+    if @valid_params != nil ?  { "The-date-time" => "#{Time.now.strftime(@valid_params.join("-"))}" } : { "The-date-time" => "#{Time.now }" }
+  end    
+
   def body
-    if status_200
-      ["Welcome aboard!\n"]
-    elsif status == 400
-      ["Unknown time format #{@badparams}\n"]
-    else
-      ["Try again!\n"]
-    end
+    return ["Invalid URL"] if @env["REQUEST_PATH"] != "/time"
+
+    status == 200 ? ["Welcome aboard!\n"] : ["Unknown time format #{@bad_params}"]
   end
 
-  def status_200
-    status == 200
-  end
+  def no_bad_parameters?
+    return false if @bad_params == nil
+    true if @bad_params.size != 0
+  end  
 end
